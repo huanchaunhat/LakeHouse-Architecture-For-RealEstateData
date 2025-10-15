@@ -95,3 +95,9 @@ USER airflow
 WORKDIR ${AIRFLOW_USER_HOME}
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["webserver"]
+
+USER root
+RUN apt-get update && apt-get install -y docker.io && \
+    usermod -aG docker airflow && \
+    chmod 666 /var/run/docker.sock || true
+USER airflow

@@ -1,7 +1,6 @@
 version: "3.9"
 
 services:
-
   mysql:
     image: mysql:5.7
     container_name: mysql
@@ -20,7 +19,7 @@ services:
     volumes:
       - ./docker-volumes/psql:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5433:5432"
     env_file:
       - .env
     networks:
@@ -33,7 +32,7 @@ services:
     ports:
       - "9001:9001"
       - "9000:9000"
-    command: [ "server", "/data", "--console-address", ":9001" ]
+    command: ["server", "/data", "--console-address", ":9001"]
     volumes:
       - ./docker-volumes/minio/data:/data
     env_file:
@@ -80,7 +79,7 @@ services:
       - SPARK_USER=spark
     volumes:
       - ./spark/spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf
-      - ./spark/scripttest:/opt/bitnami/spark/scripts
+      - ./scripts:/opt/bitnami/spark/scripts
     networks:
       - data_network
 
@@ -136,7 +135,7 @@ services:
     networks:
       - data_network
 
-  airflow-webserver: 
+  airflow-webserver:
     build: ./airflow
     container_name: airflow-webserver
     restart: always
@@ -146,26 +145,27 @@ services:
       - LOAD_EX=n
       - AIRFLOW__WEBSERVER__RBAC=False
       - AIRFLOW__WEBSERVER__SESSION_BACKEND=securecookie
-      - EXECUTOR=Local    
+      - EXECUTOR=Local
     volumes:
-        - ./real_estate_data:/usr/local/airflow/real_estate_data
-        - ./airflow/dags:/usr/local/airflow/dags
-        - ./airflow/logs:/usr/local/airflow/logs
-        - ./airflow/plugins:/usr/local/airflow/plugins
-        - ./airflow/config/airflow.cfg:/usr/local/airflow/config/airflow.cfg
-        - ./airflow/jars:/usr/local/airflow/jars
-        - ./scripts:/usr/local/airflow/scripts
+      - ./real_estate_data:/usr/local/airflow/real_estate_data
+      - ./airflow/dags:/usr/local/airflow/dags
+      - ./airflow/logs:/usr/local/airflow/logs
+      - ./airflow/plugins:/usr/local/airflow/plugins
+      - ./airflow/config/airflow.cfg:/usr/local/airflow/config/airflow.cfg
+      - ./airflow/jars:/usr/local/airflow/jars
+      - ./scripts:/usr/local/airflow/scripts
+      - /var/run/docker.sock:/var/run/docker.sock
     ports:
-        - "8088:8088"
-        - "8888:8888"
+      - "8088:8088"
+      - "8888:8888"
     command: webserver
     healthcheck:
-        test: ["CMD-SHELL", "[ -f /usr/local/airflow/airflow-webserver.pid ]"]
-        interval: 30s
-        timeout: 30s
-        retries: 3
+      test: ["CMD-SHELL", "[ -f /usr/local/airflow/airflow-webserver.pid ]"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
     networks:
-        - data_network
+      - data_network
 
   mysql-airflow:
     image: mysql:5.7
@@ -232,7 +232,6 @@ services:
       - ./app:/home/app
     networks:
       - data_network
-      
 
 networks:
   data_network:
