@@ -18,6 +18,16 @@ export \
   AIRFLOW__CORE__FERNET_KEY \
   AIRFLOW__CORE__LOAD_EXAMPLES \
 
+if [ -S /var/run/docker.sock ]; then
+  echo "[INFO] Checking Docker socket permission..."
+  if ! docker ps >/dev/null 2>&1; then
+    echo "[WARN] Docker socket not accessible — adjusting permissions..."
+    sudo chmod 666 /var/run/docker.sock || chmod 666 /var/run/docker.sock
+  fi
+else
+  echo "[WARN] /var/run/docker.sock not found — skipping Docker permission setup"
+fi
+
 # Install custom python package if requirements.txt is present
 if [ -e "/requirements.txt" ]; then
     $(command -v pip) install --user -r /requirements.txt
