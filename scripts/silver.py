@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Silver Pipeline - Transform từ Bronze và lưu vào MinIO (Silver Layer) - PySpark + Delta Lake
+Silver Pipeline - Transform & Clean từ Bronze và lưu vào MinIO (Silver Layer) - PySpark + Delta Lake
 """
 
 import os
@@ -8,7 +8,9 @@ import re
 import json
 import boto3
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, udf, lit
+from pyspark.sql.functions import (
+    col, udf, lit, trim, initcap, when, concat_ws, round as spark_round
+)
 from pyspark.sql.types import DoubleType, IntegerType
 from delta import configure_spark_with_delta_pip
 
@@ -30,55 +32,49 @@ s3 = boto3.client(
     aws_secret_access_key=SECRET_KEY,
 )
 
-# Auto-create bucket nếu chưa có
-existing_buckets = [b["Name"] for b in s3.list_buckets()["Buckets"]]
-if BUCKET not in existing_buckets:
+if BUCKET not in [b["Name"] for b in s3.list_buckets()["Buckets"]]:
     s3.create_bucket(Bucket=BUCKET)
     print(f"🪣 Created bucket: {BUCKET}")
 
 # ==================== HELPERS ====================
-def parse_area(value):
-    if not value:
+def parse_area(v):
+    if not v:
         return None
     try:
-        nums = re.findall(r'[\d,.]+', str(value))
+        nums = re.findall(r'[\d,.]+', str(v))
         return float(nums[0].replace(",", "")) if nums else None
     except:
         return None
 
-
-def parse_number(value):
-    if not value:
+def parse_number(v):
+    if not v:
         return None
     try:
-        return int(float(str(value)))
+        return int(float(str(v)))
     except:
         return None
 
-
-def normalize_price(value):
-    if not value:
+def normalize_price(v):
+    if not v:
         return None
-    s = str(value).lower()
+    s = str(v).lower()
     try:
         if "tỷ" in s:
+            nums = re.findall(r'[\d,.]+', s)
+            return float(nums[0].replace(",", ".")) if nums else None
+        elif "triệu" in s:
+            nums = re.findall(r'[\d,.]+', s)
+            return float(nums[0].replace(",", ".")) / 1000 if nums else None
+        else:
             nums = re.findall(r'[\d.]+', s)
             return float(nums[0]) if nums else None
-        elif "triệu" in s:
-            nums = re.findall(r'[\d.]+', s)
-            return float(nums[0]) / 1000 if nums else None
-        else:
-            price_str = re.sub(r"[^\d]", "", str(value))
-            return int(price_str) / 1e9 if price_str else None
     except:
         return None
 
-
 def clean_column_names(df):
-    """Chuẩn hóa tên cột cho hợp lệ với Delta Lake"""
-    for old_name in df.columns:
-        new_name = (
-            old_name.strip()
+    for old in df.columns:
+        new = (
+            old.strip()
             .replace(" ", "_")
             .replace("(", "")
             .replace(")", "")
@@ -87,20 +83,18 @@ def clean_column_names(df):
             .replace("=", "")
             .replace("/", "_")
         )
-        df = df.withColumnRenamed(old_name, new_name)
+        df = df.withColumnRenamed(old, new)
     return df
 
-
 # Register UDFs
-from pyspark.sql.functions import udf
 parse_area_udf = udf(parse_area, DoubleType())
 parse_number_udf = udf(parse_number, IntegerType())
 normalize_price_udf = udf(normalize_price, DoubleType())
 
-# ==================== SPARK SESSION ====================
+# ==================== SPARK ====================
 builder = (
     SparkSession.builder
-    .appName("SilverPipeline")
+    .appName("SilverPipeline-Delta")
     .config("spark.hadoop.fs.s3a.endpoint", MINIO_ENDPOINT)
     .config("spark.hadoop.fs.s3a.access.key", ACCESS_KEY)
     .config("spark.hadoop.fs.s3a.secret.key", SECRET_KEY)
@@ -108,20 +102,15 @@ builder = (
     .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
 )
 
+spark = configure_spark_with_delta_pip(builder).getOrCreate()
+spark.sparkContext.setLogLevel("WARN")
+print("🚀 Spark session started with Delta Lake")
+
 # ==================== MAIN ====================
 def run_silver():
-    spark = configure_spark_with_delta_pip(builder).getOrCreate()
-    spark.sparkContext.setLogLevel("WARN")
-    print("🚀 Spark session started with Delta Lake")
-
-    # Lấy danh sách file trong Bronze
     resp = s3.list_objects_v2(Bucket=BUCKET, Prefix=BRONZE_PREFIX)
     objs = resp.get("Contents", []) if resp else []
-    objs = [
-        o for o in objs
-        if not o["Key"].startswith(PROCESSED_PREFIX) and o["Key"].endswith(".json")
-    ]
-
+    objs = [o for o in objs if not o["Key"].startswith(PROCESSED_PREFIX) and o["Key"].endswith(".json")]
     if not objs:
         print("⚠️ Không tìm thấy dữ liệu Bronze chưa xử lý.")
         return
@@ -132,16 +121,15 @@ def run_silver():
 
     for obj in to_process:
         key = obj["Key"]
-        print(f"🔄 Xử lý file: {key}")
+        print(f"\n🔄 Đang xử lý file: {key}")
 
-        # Đọc JSON từ MinIO
         raw_bytes = s3.get_object(Bucket=BUCKET, Key=key)["Body"].read()
         try:
             data = json.loads(raw_bytes.decode("utf-8"))
             if isinstance(data, dict):
                 data = [data]
         except Exception as e:
-            print(f"❌ Không parse được JSON từ {key}: {e}")
+            print(f"❌ Parse JSON lỗi: {e}")
             move_to_processed(key)
             continue
 
@@ -150,34 +138,51 @@ def run_silver():
             move_to_processed(key)
             continue
 
-        # Load vào Spark DataFrame
         df = spark.read.json(spark.sparkContext.parallelize([json.dumps(r) for r in data]))
-        print(f"📦 Số record raw: {df.count()}")
+        print(f"📦 Raw records: {df.count()}")
 
-        # Chuẩn hóa schema
-        df_standard = df.select(
-            col("address").alias("Address"),
-            col("Diện tích đất").alias("Area"),
-            col("Chiều ngang").alias("Frontage"),
-            col("Đặc điểm nhà/đất").alias("Access_Road"),
-            col("Hướng cửa chính").alias("House_Direction"),
-            col("Tổng số tầng").alias("Floors"),
-            col("Số phòng ngủ").alias("Bedrooms"),
-            col("Số phòng vệ sinh").alias("Bathrooms"),
-            col("Giấy tờ pháp lý").alias("Legal_Status"),
-            col("Tình trạng nội thất").alias("Furniture_State"),
-            col("price").alias("Price")
+        df = clean_column_names(df)
+
+        # 🧭 Chuẩn hóa cột Address
+        df = df.withColumn(
+            "Address",
+            when(col("address").isNotNull(), trim(col("address")))
+            .otherwise(
+                when(col("Địa_chỉ").isNotNull(), trim(col("Địa_chỉ")))
+                .otherwise(
+                    concat_ws(", ",
+                        col("Phường,_thị_xã,_thị_trấn"),
+                        col("Quận,_Huyện"),
+                        col("Tỉnh,_thành_phố")
+                    )
+                )
+            )
         )
 
-        df_standard = clean_column_names(df_standard)
-        print(f"✅ Sau transform: {df_standard.count()} records")
+        # === Làm sạch dữ liệu ===
+        df_clean = (
+            df
+            .withColumn("Area", parse_area_udf(col("Diện_tích_đất")))
+            .withColumn("Frontage", parse_area_udf(col("Chiều_ngang")))
+            .withColumn("Floors", parse_number_udf(col("Tổng_số_tầng")))
+            .withColumn("Bedrooms", parse_number_udf(col("Số_phòng_ngủ")))
+            .withColumn("Bathrooms", parse_number_udf(col("Số_phòng_vệ_sinh")))
+            .withColumn("Price", normalize_price_udf(col("price")))
+            .withColumn("Address", initcap(trim(col("Address"))))
+            .withColumn("Legal_Status", initcap(trim(col("Giấy_tờ_pháp_lý"))))
+            .withColumn("House_Direction", initcap(trim(col("Hướng_cửa_chính"))))
+            .filter(col("Area").isNotNull() & (col("Area") > 0))
+            .filter(col("Price").isNotNull() & (col("Price") > 0))
+            .withColumn("Price_per_m2", spark_round(col("Price") / col("Area"), 3))
+        )
 
-        # Lấy timestamp từ tên file bronze
+        cleaned_count = df_clean.count()
+        print(f"✅ Sau khi làm sạch: {cleaned_count} bản ghi hợp lệ")
+
+        # === Ghi ra Silver Layer (Delta Lake) ===
         filename = os.path.basename(key)
-        timestamp = filename.split("_")[1]  # crawl_YYYYMMDD_HHMMSS.json
-        date_fmt = f"{timestamp[:4]}-{timestamp[4:6]}-{timestamp[6:]}"  # YYYY-MM-DD
-
-        # Tạo key dạng partitioned
+        timestamp = filename.split("_")[1] if "_" in filename else "unknown"
+        date_fmt = f"{timestamp[:4]}-{timestamp[4:6]}-{timestamp[6:]}" if len(timestamp) == 8 else "unknown"
         silver_key = (
             key.replace(BRONZE_PREFIX, f"{SILVER_PREFIX}/date={date_fmt}/")
             .replace(".json", "")
@@ -185,19 +190,13 @@ def run_silver():
         )
         silver_path = f"s3a://{BUCKET}/{silver_key}"
 
-        # Thêm cột Date
-        df_standard = df_standard.withColumn("Date", lit(date_fmt))
+        df_clean = df_clean.withColumn("Date", lit(date_fmt))
+        df_clean.write.format("delta").mode("overwrite").partitionBy("Date").save(silver_path)
+        print(f"💾 Đã lưu Silver (Delta Lake) tại: {silver_path}")
 
-        # Ghi Delta Table vào MinIO
-        df_standard.write.format("delta").mode("overwrite").partitionBy("Date").save(silver_path)
-        print(f"💾 Đã lưu Silver (Delta Lake) -> {silver_path}")
-
-        # Move file đã xử lý
         move_to_processed(key)
 
-
 def move_to_processed(key):
-    """Di chuyển file từ bronze/ sang bronze/processed/"""
     try:
         processed_key = key.replace(BRONZE_PREFIX, PROCESSED_PREFIX)
         s3.copy_object(Bucket=BUCKET, CopySource={"Bucket": BUCKET, "Key": key}, Key=processed_key)
@@ -205,7 +204,6 @@ def move_to_processed(key):
         print(f"📦 Đã move {key} -> {processed_key}")
     except Exception as e:
         print(f"⚠️ Lỗi khi move_to_processed: {e}")
-
 
 if __name__ == "__main__":
     run_silver()
