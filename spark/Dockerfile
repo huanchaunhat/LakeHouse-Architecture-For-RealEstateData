@@ -4,6 +4,7 @@ USER root
 
 # Install prerequisites
 RUN apt-get update && apt-get install -y curl && apt-get clean
+RUN apt-get install -y wget
 
 # Install Python dependencies
 RUN pip install --no-cache-dir boto3 pandas pyarrow delta-spark==3.2.0
