@@ -1,0 +1,17 @@
+name: 'real_estate_lakehouse'
+version: '1.0.0'
+config-version: 2
+
+profile: 'lakehouse_spark'
+
+# Nơi dbt tìm các file model (SQL)
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+
+target-path: "target"  # Nơi dbt lưu các file đã biên dịch
+clean-targets:
+  - "target"
+  - "dbt_packages"

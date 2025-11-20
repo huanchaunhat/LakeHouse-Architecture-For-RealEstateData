@@ -1,96 +1,48 @@
-# VERSION 1.10.9
-# AUTHOR: Matthieu "Puckel_" Roisil
-# DESCRIPTION: Basic Airflow container
-# BUILD: docker build --rm -t puckel/docker-airflow .
-# SOURCE: https://github.com/puckel/docker-airflow
-
 FROM python:3.9-slim-bullseye
 LABEL maintainer="lakehouse"
 
-# Never prompt the user for choices on installation/configuration of packages
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TERM linux
 
-# Airflow
+# Airflow Envs
 ARG AIRFLOW_VERSION=2.6.1
 ARG AIRFLOW_USER_HOME=/usr/local/airflow
-ARG AIRFLOW_DEPS=""
-ARG PYTHON_DEPS=""
 ENV AIRFLOW_HOME=${AIRFLOW_USER_HOME}
-
-# Define en_US.
 ENV LANGUAGE en_US.UTF-8
 ENV LANG en_US.UTF-8
 ENV LC_ALL en_US.UTF-8
-ENV LC_CTYPE en_US.UTF-8
-ENV LC_MESSAGES en_US.UTF-8
 
-# Disable noisy "Handling signal" log messages:
-# ENV GUNICORN_CMD_ARGS --log-level WARNING
-
+# Cài đặt các gói hệ thống
 RUN set -ex \
-    && pip install pydantic==1.10.10 \
-    && buildDeps="freetds-dev libkrb5-dev libsasl2-dev libssl-dev libffi-dev libpq-dev git" \
-    && sed -i 's/buster/bullseye/g' /etc/apt/sources.list \
+    && buildDeps="freetds-dev libkrb5-dev libsasl2-dev libssl-dev libffi-dev libpq-dev git build-essential default-libmysqlclient-dev" \
     && apt-get update -yqq \
     && apt-get upgrade -yqq \
     && apt-get install -yqq --no-install-recommends \
         $buildDeps \
-        freetds-bin \
-        build-essential \
-        default-libmysqlclient-dev \
-        apt-utils \
-        curl \
-        rsync \
-        netcat \
-        locales \
-    && apt-get install libsasl2-modules -yqq \
-    && apt-get install openjdk-11-jdk -yqq\
+        freetds-bin apt-utils curl rsync netcat locales libsasl2-modules openjdk-11-jdk libmariadb3 \
     && sed -i 's/^# en_US.UTF-8 UTF-8$/en_US.UTF-8 UTF-8/g' /etc/locale.gen \
     && locale-gen \
     && update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 \
-    && useradd -ms /bin/bash -d ${AIRFLOW_USER_HOME} airflow \
-    && pip install -U pip setuptools wheel \
-    && pip install pytz \
-    && pip install pyOpenSSL \
-    && pip install ndg-httpsclient \
-    && pip install pyasn1 \
-    && pip install Flask-Session2 \
-    && pip install Flask-Session connexion[swagger-ui]==2.14.2 \
-    && pip install mysqlclient==2.1.1 \
-    && pip install apache-airflow[crypto,celery,postgres,hive,jdbc,mysql,spark,ssh${AIRFLOW_DEPS:+,}${AIRFLOW_DEPS}]==${AIRFLOW_VERSION} \
-    && pip install --force-reinstall pyspark==3.3.2 \
-    && pip install 'redis==3.2' \
-    && pip install 'pendulum==2.0.5' \
-    && pip install pandas dbt-core dbt-spark findspark delta-spark==2.2.0 pydantic==1.10.10 mlflow==2.3.2 boto3==1.16.46 \
-    && apt-get install -y libmariadb3 \
-    && if [ -n "${PYTHON_DEPS}" ]; then pip install ${PYTHON_DEPS}; fi \
-    #&& pip install -r /home/requirements.txt \
-    && apt-get purge --auto-remove -yqq $buildDeps \
-    && apt-get autoremove -yqq --purge \
-    && apt-get clean \
-    && rm -rf \
-        /var/lib/apt/lists/* \
-        /tmp/* \
-        /var/tmp/* \
-        /usr/share/man \
-        /usr/share/doc \
-        /usr/share/doc-base
+    && useradd -ms /bin/bash -d ${AIRFLOW_USER_HOME} airflow
 
-# [...]
-# ENV JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
 ENV JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
 ENV PATH=$PATH:$JAVA_HOME/bin
 
-# COPY requirements.txt /requirements.txt
-# RUN pip install -r /requirements.txt
+COPY requirements.txt /requirements.txt
+RUN set -ex \
+    && pip install --no-cache-dir -U pip setuptools wheel \
+    && pip install --no-cache-dir "google-re2==1.1.20240701" \
+    && pip install --no-cache-dir -r /requirements.txt \
+    && apt-get purge --auto-remove -yqq freetds-dev libkrb5-dev libsasl2-dev libssl-dev libffi-dev libpq-dev git build-essential default-libmysqlclient-dev \
+    && apt-get autoremove -yqq --purge \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
 COPY script/entrypoint.sh /entrypoint.sh
 COPY config/airflow.cfg ${AIRFLOW_USER_HOME}/airflow.cfg
 
 RUN chown -R airflow: ${AIRFLOW_USER_HOME}
-
 EXPOSE 8088 5555 8793
-
 USER airflow
 WORKDIR ${AIRFLOW_USER_HOME}
 ENTRYPOINT ["/entrypoint.sh"]

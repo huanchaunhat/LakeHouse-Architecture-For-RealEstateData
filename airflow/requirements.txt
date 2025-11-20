@@ -1,8 +1,29 @@
-pandas    
-dbt-core
-dbt-spark
-findspark
+# Airflow & Provider
+apache-airflow[crypto,celery,postgres,hive,jdbc,mysql,spark,ssh, sensors]==2.6.1
+apache-airflow-providers-amazon==8.9.0
+
+dbt-core==1.5.0
+dbt-spark==1.5.0
+
+# PySpark & Delta Lake
+pyspark==3.3.2
 delta-spark==2.2.0
-pydantic==1.10.10
+findspark
+
+# Data/ML
+pandas
 mlflow==2.3.2
-boto3==1.16.46
+
+# Các dependency
+pydantic==1.10.10
+mysqlclient==2.1.1
+redis==3.2
+pendulum==2.0.5
+pyOpenSSL
+ndg-httpsclient
+pyasn1
+Flask-Session2
+Flask-Session
+connexion[swagger-ui]==2.14.2
+
+WTForms==3.0.1

@@ -1,0 +1,6 @@
+version: 2
+sources:
+  - name: raw_lakehouse
+    schema: bronze
+    tables:
+      - name: raw_properties # Bảng Delta thô mà Spark ghi

@@ -136,3 +136,18 @@ dbt_packages/
 .idea/
 psql/
 mysql/
+
+.env
+*.env
+.env.*
+
+# Chứa toàn bộ data của MinIO, MySQL, Postgres...
+docker-volumes/
+
+# Thư mục này do dbt compile tạo ra
+**/target/
+# Log của dbt (nếu dự án dbt của bạn nằm trong thư mục con)
+**/dbt/logs/
+
+.DS_Store
+.vscode/

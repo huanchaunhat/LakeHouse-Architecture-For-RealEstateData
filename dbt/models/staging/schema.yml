@@ -1,0 +1,14 @@
+version: 2
+models:
+  - name: stg_properties
+    columns:
+      - name: property_id
+        tests:
+          - unique
+          - not_null
+      - name: area
+        tests:
+          - dbt_expectations.expect_column_values_to_be_positive
+      - name: price_in_billions
+        tests:
+          - dbt_expectations.expect_column_values_to_be_positive

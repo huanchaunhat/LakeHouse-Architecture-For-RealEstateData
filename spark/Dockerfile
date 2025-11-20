@@ -1,24 +1,38 @@
-FROM docker.io/bitnamilegacy/spark:3.5
+# Sử dụng Spark 3.3.2
+FROM docker.io/bitnamilegacy/spark:3.3.2
 
 USER root
 
-# Install prerequisites
-RUN apt-get update && apt-get install -y curl && apt-get clean
-RUN apt-get install -y wget
+# 1. Cài đặt công cụ hệ thống
+RUN apt-get update && apt-get install -yqq --no-install-recommends \
+    curl \
+    wget \
+    netcat-openbsd \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-RUN pip install --no-cache-dir boto3 pandas pyarrow delta-spark==3.2.0
-RUN rm -f /opt/bitnami/spark/jars/mysql-connector-java-8.0.33.jar
-RUN wget -O /opt/bitnami/spark/jars/mysql-connector-j-8.0.33.jar https://repo1.maven.org/maven2/com/mysql/mysql-connector-j/8.0.33/mysql-connector-j-8.0.33.jar
+# 2. Cài đặt thư viện Python
+# Dùng delta-spark==2.2.0 để tương thích với Spark 3.3.2
+RUN pip install --no-cache-dir boto3 pandas pyarrow delta-spark==2.2.0
 
+# 3. Tải các file JAR
+WORKDIR /opt/bitnami/spark/jars
 
-# Add matching Delta + AWS JARs
-RUN curl -O https://repo1.maven.org/maven2/software/amazon/awssdk/s3/2.25.32/s3-2.25.32.jar \
-    && curl -O https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.699/aws-java-sdk-bundle-1.12.699.jar \
-    && curl -O https://repo1.maven.org/maven2/io/delta/delta-core_2.12/3.2.0/delta-core_2.12-3.2.0.jar \
-    && curl -O https://repo1.maven.org/maven2/io/delta/delta-storage/3.2.0/delta-storage-3.2.0.jar \
-    && curl -O https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.6/hadoop-aws-3.3.6.jar \
-    && curl -O https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.33/mysql-connector-java-8.0.33.jar \
-    && mv *.jar /opt/bitnami/spark/jars/
-    
+# Xóa MySQL jar cũ nếu có để tránh xung đột
+RUN rm -f mysql-connector*.jar
 
+# --- Tải về ---
+# 1. Delta Lake 2.2.0
+RUN curl -O https://repo1.maven.org/maven2/io/delta/delta-core_2.12/2.2.0/delta-core_2.12-2.2.0.jar \
+    && curl -O https://repo1.maven.org/maven2/io/delta/delta-storage/2.2.0/delta-storage-2.2.0.jar
+
+# 2. Hadoop AWS & AWS SDK
+RUN curl -O https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.2/hadoop-aws-3.3.2.jar \
+    && curl -O https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar
+
+# 3. MySQL Connector
+RUN curl -O https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.28/mysql-connector-java-8.0.28.jar
+
+# Quay lại thư mục làm việc mặc định và user mặc định
+WORKDIR /opt/bitnami/spark
+USER 1001
