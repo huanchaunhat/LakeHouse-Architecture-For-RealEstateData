@@ -3,4 +3,4 @@ sources:
   - name: raw_lakehouse
     schema: bronze
     tables:
-      - name: raw_properties # Bảng Delta thô mà Spark ghi
+      - name: properties # Bronze table sau khi normalize columns

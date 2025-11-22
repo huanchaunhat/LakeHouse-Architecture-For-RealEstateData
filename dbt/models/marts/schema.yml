@@ -1,0 +1,159 @@
+version: 2
+
+models:
+  # ========== DIMENSION TABLES ==========
+
+  - name: dim_properties
+    description: "Dimension - Thuộc tính property (SCD Type 2)"
+    columns:
+      - name: property_id
+        description: "Business key của property"
+        tests:
+          - unique
+          - not_null
+      - name: title
+        description: "Tiêu đề tin đăng"
+      - name: area
+        description: "Diện tích đất (m²)"
+      - name: bedrooms
+        description: "Số phòng ngủ"
+      - name: bathrooms
+        description: "Số phòng vệ sinh"
+      - name: floors
+        description: "Tổng số tầng"
+      - name: legal_status
+        description: "Tình trạng giấy tờ pháp lý"
+      - name: house_direction
+        description: "Hướng cửa chính"
+      - name: is_current
+        description: "Flag cho SCD Type 2 - current record"
+
+  - name: dim_locations
+    description: "Dimension - Địa chỉ với hierarchy (Province -> District -> Ward)"
+    columns:
+      - name: location_id
+        description: "Surrogate key"
+        tests:
+          - unique
+          - not_null
+      - name: full_address
+        description: "Địa chỉ đầy đủ"
+      - name: province
+        description: "Tỉnh/Thành phố"
+      - name: district
+        description: "Quận/Huyện"
+      - name: ward
+        description: "Phường/Xã"
+      - name: region
+        description: "Vùng miền (Miền Nam, Miền Bắc, Miền Trung)"
+
+  - name: dim_legal_status
+    description: "Dimension - Tình trạng pháp lý (lookup table)"
+    columns:
+      - name: legal_status_id
+        description: "Surrogate key"
+        tests:
+          - unique
+          - not_null
+      - name: legal_status
+        description: "Tên tình trạng pháp lý"
+      - name: legal_status_category
+        description: "Nhóm phân loại"
+      - name: description
+        description: "Mô tả chi tiết"
+
+  - name: dim_date
+    description: "Dimension - Date dimension chuẩn"
+    columns:
+      - name: date_day
+        description: "Date primary key"
+        tests:
+          - unique
+          - not_null
+      - name: year
+        description: "Năm"
+      - name: quarter
+        description: "Quý"
+      - name: month
+        description: "Tháng"
+      - name: is_weekend
+        description: "Flag cuối tuần"
+
+  # ========== FACT TABLES ==========
+
+  - name: fct_properties
+    description: "Fact - Property listings với foreign keys đến dimensions (Star Schema)"
+    columns:
+      - name: property_id
+        description: "Primary key của fact"
+        tests:
+          - unique
+          - not_null
+
+      - name: location_id
+        description: "Foreign key → dim_locations"
+
+      - name: legal_status_id
+        description: "Foreign key → dim_legal_status"
+
+      - name: date_key
+        description: "Foreign key → dim_date"
+
+      - name: price_in_billions
+        description: "Measure: Giá (Tỷ VNĐ)"
+        tests:
+          - not_null
+
+      - name: area
+        description: "Measure: Diện tích (m²). Có thể NULL nếu listing không có thông tin diện tích."
+        # Area can be NULL for some properties
+
+      - name: price_per_m2_millions
+        description: "Calculated measure: Giá/m² (Triệu VNĐ/m²)"
+
+      - name: floors
+        description: "Measure: Số tầng"
+
+      - name: bedrooms
+        description: "Measure: Số phòng ngủ"
+
+      - name: bathrooms
+        description: "Measure: Số phòng vệ sinh"
+
+  - name: fct_daily_summary
+    description: "Gold layer - Báo cáo tổng hợp theo ngày"
+    columns:
+      - name: report_date
+        description: "Ngày báo cáo"
+        tests:
+          - not_null
+
+      - name: total_new_listings
+        description: "Tổng số tin đăng mới trong ngày"
+
+      - name: total_value_listed_billions
+        description: "Tổng giá trị BĐS niêm yết (Tỷ VNĐ)"
+
+      - name: avg_price_per_m2_millions
+        description: "Giá trung bình/m² (Triệu VNĐ/m²)"
+
+  - name: fct_data_quality_report
+    description: "Gold layer - Báo cáo chất lượng dữ liệu theo ngày"
+    columns:
+      - name: report_date
+        description: "Ngày báo cáo"
+        tests:
+          - not_null
+
+      - name: data_quality_flag
+        description: "Loại vấn đề về chất lượng dữ liệu"
+        tests:
+          - accepted_values:
+              values:
+                ["VALID", "INVALID_AREA", "MISSING_PRICE", "MISSING_ADDRESS"]
+
+      - name: record_count
+        description: "Số lượng records cho mỗi loại"
+
+      - name: percentage
+        description: "Tỷ lệ % records trong ngày"
