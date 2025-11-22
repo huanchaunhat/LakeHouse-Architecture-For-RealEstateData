@@ -125,11 +125,28 @@ services:
     ports:
       - "4040:4040"
       - "10000:10000"
+    # Giới hạn CPU/Memory cho container
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
     command: sh -c "
       sleep 10 && ./sbin/start-thriftserver.sh \
       --driver-java-options '-Dhive.metastore.uris=thrift://hive-metastore:9083' \
       --master spark://spark-master:7077 \
-      --conf spark.dynamicAllocation.enabled=true"
+      --driver-cores 1 \
+      --driver-memory 1g \
+      --total-executor-cores 1 \
+      --executor-cores 1 \
+      --executor-memory 1g \
+      --conf spark.dynamicAllocation.enabled=false \
+      --conf spark.cores.max=1 \
+      --conf spark.sql.shuffle.partitions=8 \
+      --conf spark.default.parallelism=4"
     volumes:
       - ./spark/spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf
       - ./spark/hive-site.xml:/opt/bitnami/spark/conf/hive-site.xml
@@ -145,6 +162,24 @@ services:
       - .env
     networks:
       - data_network
+
+  superset:
+    image: apache/superset:3.0.0
+    container_name: superset
+    ports:
+      - "8089:8088" # Changed to 8089 externally to avoid conflict with Airflow
+    environment:
+      - SUPERSET_SECRET_KEY=ThisIsASecretKeyForSupersetPleaseChangeInProduction
+      - SUPERSET_LOAD_EXAMPLES=yes
+    volumes:
+      - ./superset:/app/superset_home
+    networks:
+      - data_network
+    command: >
+      sh -c "pip install pyhive thrift sasl thrift_sasl &&
+             superset db upgrade &&
+             superset init &&
+             gunicorn --bind 0.0.0.0:8088 --timeout 120 --workers 4 'superset.app:create_app()'"
 
   airflow-webserver:
     build: ./airflow

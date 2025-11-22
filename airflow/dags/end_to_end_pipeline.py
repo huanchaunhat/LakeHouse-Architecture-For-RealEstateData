@@ -6,43 +6,42 @@ from datetime import datetime, timedelta
 from io import BytesIO
 
 from airflow.decorators import dag, task
-from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 from airflow.operators.bash import BashOperator
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook # Import S3Hook
 
 # ==================== CONFIGS ====================
-# Config cho dbt
+# dbt configuration
 DBT_PROJECT_DIR = "/opt/airflow/dbt"
 
-# Config cho crawl
+# Crawl configuration
 BASE_URL = "https://gateway.chotot.com/v1/public/ad-listing"
 DETAIL_URL = "https://gateway.chotot.com/v1/public/ad-listing/{}"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 MAX_PAGES = 20
 LIMIT = 20
 
-# Config cho MinIO (Dùng S3Hook)
+# MinIO configuration (using S3Hook)
 MINIO_CONN_ID = "minio_s3"
 BUCKET = "lakehouse"
 BRONZE_PREFIX = "bronze/"
-BRONZE_JSON_PATH = f"{BRONZE_PREFIX}json/" # Thư mục con cho file jsonl
+BRONZE_JSON_PATH = f"{BRONZE_PREFIX}json/" # Subdirectory for jsonl files
 SEEN_FILE = f"{BRONZE_PREFIX}list_ids.txt"
 
 # ==================== HELPER FUNCTIONS ====================
 
 def fetch_list(offset=0, limit=20):
-    """Lấy danh sách quảng cáo từ Chợ Tốt"""
+    """Fetch advertisement list from Chotot"""
     try:
         params = {"cg": 1000, "o": offset, "limit": limit}
         r = requests.get(BASE_URL, headers=HEADERS, params=params, timeout=20)
         r.raise_for_status()
         return r.json().get("ads", [])
     except Exception as e:
-        logging.error(f"Lỗi khi fetch list (offset={offset}): {e}")
+        logging.error(f"Error fetching list (offset={offset}): {e}")
         return []
 
 def fetch_detail(list_id, retries=3):
-    """Lấy chi tiết từng quảng cáo, có retry"""
+    """Fetch advertisement details with retry"""
     for attempt in range(retries):
         try:
             r = requests.get(DETAIL_URL.format(list_id), headers=HEADERS, timeout=20)
@@ -61,22 +60,22 @@ def fetch_detail(list_id, retries=3):
                     result[p["label"]] = p["value"]
             return result
         except Exception as e:
-            logging.error(f"Lỗi {list_id} (lần {attempt+1}/{retries}): {e}")
+            logging.error(f"Error {list_id} (attempt {attempt+1}/{retries}): {e}")
             time.sleep(2 ** attempt)
     return None
 
 def load_seen_ids_from_s3(s3_hook: S3Hook):
-    """Đọc file seen_ids bằng S3Hook"""
+    """Read seen_ids file using S3Hook"""
     try:
         file_content = s3_hook.read_key(SEEN_FILE, BUCKET)
         lines = file_content.splitlines()
         return set(line.strip() for line in lines if line.strip())
     except Exception as e:
-        logging.warning(f"Chưa có {SEEN_FILE} hoặc lỗi: {e}. Tạo set mới.")
+        logging.warning(f"File not found {SEEN_FILE} or error: {e}. Creating new set.")
         return set()
 
 def save_seen_ids_to_s3(s3_hook: S3Hook, new_ids: set, existing_ids: set):
-    """Lưu file seen_ids bằng S3Hook"""
+    """Save seen_ids file using S3Hook"""
     all_ids = existing_ids.union(new_ids)
     data_str = "\n".join(all_ids)
     s3_hook.load_string(
@@ -85,7 +84,7 @@ def save_seen_ids_to_s3(s3_hook: S3Hook, new_ids: set, existing_ids: set):
         bucket_name=BUCKET,
         replace=True
     )
-    logging.info(f"Cập nhật {len(new_ids)} ID mới vào {SEEN_FILE}")
+    logging.info(f"Updated {len(new_ids)} new IDs to {SEEN_FILE}")
 
 
 # ==================== AIRFLOW DAG ====================
@@ -104,13 +103,14 @@ def elt_pipeline():
     @task
     def run_bronze_crawl():
         """
-        Task 1: Crawl API và lưu file .jsonl vào MinIO
-        (Đây là logic từ bronze.py đã được refactor)
+        Task 1: Crawl API and save file .jsonl to MinIO
+        FIX: Crawl all records (not skip seen_ids) to capture price updates
+        Bronze layer will handle deduplication
         """
-        logging.info("Bắt đầu task crawl...")
+        logging.info("Starting crawl task...")
         s3_hook = S3Hook(aws_conn_id=MINIO_CONN_ID)
         
-        seen_ids = load_seen_ids_from_s3(s3_hook)
+        # seen_ids = load_seen_ids_from_s3(s3_hook)
         new_ids = set()
         all_details = []
 
@@ -122,83 +122,96 @@ def elt_pipeline():
 
             for ad in ads:
                 list_id = str(ad.get("list_id"))
-                if not list_id or list_id in seen_ids:
+                if not list_id:
                     continue
 
                 detail = fetch_detail(list_id)
                 if detail:
                     all_details.append(detail)
-                    new_ids.add(list_id) # Dùng set.add() tốt hơn
+                    new_ids.add(list_id)
 
-            logging.info(f"Trang {p}: thu được {len(all_details)} bản ghi mới")
+            logging.info(f"Page {p}: fetched {len(all_details)} records (including updates)")
             time.sleep(0.2)
 
         if not all_details:
-            logging.info("Không có dữ liệu mới để lưu.")
+            logging.info("No new data to save.")
             return
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        # Ghi vào thư mục con /json/ và dùng đuôi .jsonl
+        # Write to /json/ subdirectory with .jsonl extension
         key = f"{BRONZE_JSON_PATH}crawl_{timestamp}.jsonl" 
         
         try:
-            # Tạo data_str định dạng JSON Lines
+            # Create data_str in JSON Lines format
             data_str = "\n".join(json.dumps(detail, ensure_ascii=False) for detail in all_details)
             
-            # Dùng S3Hook để upload
+            # Use S3Hook to upload
             s3_hook.load_string(
                 string_data=data_str,
                 key=key,
                 bucket_name=BUCKET
             )
-            logging.info(f"Đã lưu {len(all_details)} bản ghi mới vào {key}")
+            logging.info(f"Saved {len(all_details)} records (including updates) to {key}")
             
-            # Cập nhật file seen_ids
-            save_seen_ids_to_s3(s3_hook, new_ids, seen_ids)
+            # Update seen_ids file (load existing + merge with new)
+            existing_ids = load_seen_ids_from_s3(s3_hook)
+            save_seen_ids_to_s3(s3_hook, new_ids, existing_ids)
             
         except Exception as e:
-            logging.error(f"Lỗi trong quá trình lưu dữ liệu: {e}")
-            raise # Ném lỗi để Airflow biết task này failed
+            logging.error(f"Error during data save process: {e}")
+            raise # Raise error so Airflow knows this task failed
 
 
-    # Task 2: Chạy Spark để load .jsonl -> Bảng Delta thô
-    load_bronze_to_table = SparkSubmitOperator(
+    # Task 2: Run Spark to load .jsonl -> Delta table
+    load_bronze_to_table = BashOperator(
         task_id='load_bronze_to_table',
-        application='/usr/local/airflow/scripts/load_bronze_to_table.py',
-        conn_id='spark_default', # Cấu hình trong Airflow UI
-        packages='io.delta:delta-core_2.12:2.2.0,org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262',
-        conf={
-            # --- 1. KẾT NỐI ---
-            "spark.hadoop.fs.s3a.endpoint": "http://minio:9000",
-            "spark.hadoop.fs.s3a.access.key": "minio",
-            "spark.hadoop.fs.s3a.secret.key": "minio123",
-            "spark.hadoop.fs.s3a.path.style.access": "true",
-            "spark.hadoop.fs.s3a.connection.ssl.enabled": "false",
-            "spark.sql.warehouse.dir": "s3a://lakehouse/warehouse",
-            "spark.sql.extensions": "io.delta.sql.DeltaSparkSessionExtension",
-            "spark.sql.catalog.spark_catalog": "org.apache.spark.sql.delta.catalog.DeltaCatalog",
-            "spark.hadoop.fs.s3a.impl": "org.apache.hadoop.fs.s3a.S3AFileSystem",
-            "spark.hadoop.hive.metastore.uris": "thrift://hive-metastore:9083",
-            
-            # --- 2. MẠNG ---
-            "spark.driver.host": "airflow-scheduler",
-            "spark.driver.bindAddress": "0.0.0.0",
-            "spark.driver.port": "30000",
-            "spark.blockManager.port": "30001",
-
-            # --- 3. TÀI NGUYÊN ---
-
-            "spark.dynamicAllocation.enabled": "false",
-            "spark.cores.max": "2",
-            "spark.executor.memory": "512m",
-            "spark.executor.cores": "1",
-            "spark.sql.shuffle.partitions": "16"
-        }
+        bash_command="""
+docker exec spark-master /opt/bitnami/spark/bin/spark-submit \
+    --master spark://spark-master:7077 \
+    --packages io.delta:delta-core_2.12:2.2.0,org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262 \
+    --conf spark.hadoop.fs.s3a.endpoint=http://minio:9000 \
+    --conf spark.hadoop.fs.s3a.access.key=minio \
+    --conf spark.hadoop.fs.s3a.secret.key=minio123 \
+    --conf spark.hadoop.fs.s3a.path.style.access=true \
+    --conf spark.hadoop.fs.s3a.connection.ssl.enabled=false \
+    --conf spark.sql.warehouse.dir=s3a://lakehouse/warehouse \
+    --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
+    --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
+    --conf spark.hadoop.fs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem \
+    --conf spark.hadoop.hive.metastore.uris=thrift://hive-metastore:9083 \
+    /opt/bitnami/spark/scripts/load_bronze_to_table.py
+        """
     )
 
-    wait_for_thrift_server = BashOperator(
-        task_id='wait_for_thrift_server',
+    # Task 2.5: Normalize column names (Vietnamese to English)
+    normalize_bronze_columns = BashOperator(
+        task_id='normalize_bronze_columns',
         bash_command="""
+docker exec spark-master /opt/bitnami/spark/bin/spark-submit \
+    --master spark://spark-master:7077 \
+    --packages io.delta:delta-core_2.12:2.2.0,org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262 \
+    --conf spark.hadoop.fs.s3a.endpoint=http://minio:9000 \
+    --conf spark.hadoop.fs.s3a.access.key=minio \
+    --conf spark.hadoop.fs.s3a.secret.key=minio123 \
+    --conf spark.hadoop.fs.s3a.path.style.access=true \
+    --conf spark.hadoop.fs.s3a.connection.ssl.enabled=false \
+    --conf spark.sql.warehouse.dir=s3a://lakehouse/warehouse \
+    --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
+    --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
+    --conf spark.hadoop.fs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem \
+    --conf spark.hadoop.hive.metastore.uris=thrift://hive-metastore:9083 \
+    /opt/bitnami/spark/scripts/normalize_bronze_columns.py
+        """
+    )
+
+    # Task 2.7: Restart and wait for Thrift Server (ensure clean state)
+    restart_and_wait_thrift = BashOperator(
+        task_id='restart_and_wait_thrift',
+        bash_command="""
+echo "Restarting Spark Thrift Server for clean state..."
+docker restart spark-thrift-server
+sleep 10
+
 python3 -c "
 import socket
 import time
@@ -219,8 +232,8 @@ while True:
         exit(1)
     try:
         with socket.create_connection((host, port), timeout=5):
-            log.info(f'{host}:{port} is available! Waiting extra 30s for full initialization...')
-            time.sleep(30)
+            log.info(f'{host}:{port} is available! Waiting extra 20s for full initialization...')
+            time.sleep(20)
             exit(0)
     except (socket.timeout, ConnectionRefusedError):
         log.info(f'Service not yet available ({host}:{port}), retrying in 5 seconds...')
@@ -229,22 +242,46 @@ while True:
 """
     )
 
-    # Task 3: Chạy dbt để biến đổi
+    # Task 3: Run dbt for transformation with auto full-refresh if tables don't exist
     dbt_run = BashOperator(
         task_id='dbt_run',
-        bash_command=f"dbt deps --project-dir {DBT_PROJECT_DIR} --profiles-dir {DBT_PROJECT_DIR} && dbt run --project-dir {DBT_PROJECT_DIR} --profiles-dir {DBT_PROJECT_DIR}",
+        bash_command=f"""
+# Check if silver.stg_properties exists, if not do full-refresh
+if docker exec spark-master spark-sql \
+    --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
+    --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
+    -e "DESCRIBE TABLE silver.stg_properties" 2>&1 | grep -q "Table or view not found"; then
+    echo "Tables don't exist, running dbt with --full-refresh"
+    dbt deps --project-dir {DBT_PROJECT_DIR} --profiles-dir {DBT_PROJECT_DIR} && \
+    dbt run --full-refresh --project-dir {DBT_PROJECT_DIR} --profiles-dir {DBT_PROJECT_DIR}
+else
+    echo "Tables exist, running dbt incremental"
+    dbt deps --project-dir {DBT_PROJECT_DIR} --profiles-dir {DBT_PROJECT_DIR} && \
+    dbt run --project-dir {DBT_PROJECT_DIR} --profiles-dir {DBT_PROJECT_DIR}
+fi
+        """,
         retries=3,
         retry_delay=timedelta(seconds=30)
     )
 
-    # Task 4: Chạy dbt test
+    # Task 4: Run dbt test
     dbt_test = BashOperator(
         task_id='dbt_test',
-        bash_command=f"dbt deps --project-dir {DBT_PROJECT_DIR} --profiles-dir {DBT_PROJECT_DIR} && dbt run --project-dir {DBT_PROJECT_DIR} --profiles-dir {DBT_PROJECT_DIR}"
+        bash_command=f"dbt test --project-dir {DBT_PROJECT_DIR} --profiles-dir {DBT_PROJECT_DIR}"
     )
 
-    # Định nghĩa thứ tự chạy
-    run_bronze_crawl() >> load_bronze_to_table >> wait_for_thrift_server >> dbt_run >> dbt_test
+    # Task 5: Stop Spark Thrift Server to free resources
+    stop_thrift_server = BashOperator(
+        task_id='stop_thrift_server',
+        bash_command="""
+echo "Stopping Spark Thrift Server to free CPU resources..."
+docker exec spark-thrift-server pkill -f "org.apache.spark.sql.hive.thriftserver.HiveThriftServer2" || true
+echo "Thrift Server stopped successfully"
+        """,
+        trigger_rule='all_done'  # Run even if previous tasks fail
+    )
 
-# Khởi tạo DAG
+    run_bronze_crawl() >> load_bronze_to_table >> normalize_bronze_columns >> restart_and_wait_thrift >> dbt_run >> dbt_test >> stop_thrift_server
+  
+# Initialize DAG
 elt_pipeline()

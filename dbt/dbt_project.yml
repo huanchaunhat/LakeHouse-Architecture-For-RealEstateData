@@ -1,8 +1,8 @@
-name: 'real_estate_lakehouse'
-version: '1.0.0'
+name: "real_estate_lakehouse"
+version: "1.0.0"
 config-version: 2
 
-profile: 'lakehouse_spark'
+profile: "lakehouse_spark"
 
 # Nơi dbt tìm các file model (SQL)
 model-paths: ["models"]
@@ -11,7 +11,21 @@ test-paths: ["tests"]
 seed-paths: ["seeds"]
 macro-paths: ["macros"]
 
-target-path: "target"  # Nơi dbt lưu các file đã biên dịch
+target-path: "target" # Nơi dbt lưu các file đã biên dịch
 clean-targets:
   - "target"
   - "dbt_packages"
+
+# ✅ Cấu hình theo kiến trúc Lakehouse chuẩn
+models:
+  real_estate_lakehouse:
+    # Staging models (Silver layer) → bronze database
+    staging:
+      +materialized: table
+      +file_format: delta
+
+    # Marts models (Gold layer) → KHÔNG dùng +schema vì sẽ tạo gold_gold
+    # Thay vào đó: change profiles.yml target
+    marts:
+      +materialized: table
+      +file_format: delta
