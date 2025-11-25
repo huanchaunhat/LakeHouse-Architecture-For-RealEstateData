@@ -106,11 +106,11 @@ def run_load_to_bronze_table():
         if response.get('KeyCount', 0) > 0:
             # Delta log exists, register table
             spark.sql(f"CREATE TABLE IF NOT EXISTS {FULL_TABLE_NAME} USING DELTA LOCATION '{TABLE_LOCATION}'")
-            print(f"✅ Table {FULL_TABLE_NAME} registered with existing data")
+            print(f"Table {FULL_TABLE_NAME} registered with existing data")
         else:
-            print("⚠️  No existing Delta table data")
+            print("No existing Delta table data")
     except Exception as e:
-        print(f"⚠️  Could not check for existing data: {e}")
+        print(f"Could not check for existing data: {e}")
     
     # Check if we have new files to process
     if not new_files:

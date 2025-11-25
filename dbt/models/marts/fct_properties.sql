@@ -27,7 +27,7 @@ properties as (
     where 
         data_quality_flag = 'VALID'
         
-        -- ✅ CRITICAL FIELDS: Must have values (no NULLs allowed)
+        -- CRITICAL FIELDS: Must have values (no NULLs allowed)
         and property_id is not null
         and title is not null
         and address is not null
@@ -35,15 +35,15 @@ properties as (
         and price_in_billions > 0
         and price_in_billions < 1000  -- Outlier removal
         
-        -- ✅ AREA: Can be NULL (many listings don't have area), but if exists must be valid
+        -- AREA: Can be NULL (many listings don't have area), but if exists must be valid
         and (area is null or (area > 0 and area < 10000))
         
-        -- ✅ OPTIONAL FIELDS: Can be NULL (will handle in SELECT)
+        -- OPTIONAL FIELDS: Can be NULL (will handle in SELECT)
         -- bedrooms, bathrooms, floors, house_direction, etc.
 ),
 
 deduplicated_properties as (
-    select * from properties where rn = 1  -- ✅ Keep only latest
+    select * from properties where rn = 1  -- Keep only latest
 ),
 
 locations as (
