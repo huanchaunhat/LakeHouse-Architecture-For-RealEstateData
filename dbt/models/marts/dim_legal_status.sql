@@ -7,23 +7,23 @@
 
 -- Dimension table: Legal Status
 -- Lookup table cho tình trạng pháp lý
--- ✅ FIXED: Changed to incremental to preserve legal_status_id
+-- FIXED: Changed to incremental to preserve legal_status_id
 
 with unique_statuses as (
     select distinct
-        coalesce(legal_status, 'Không xác định') as legal_status  -- ✅ Handle NULL
+        coalesce(legal_status, 'Không xác định') as legal_status  -- Handle NULL
     from {{ ref('stg_properties') }}
     where 
         data_quality_flag = 'VALID'
     
-    union  -- ✅ FIXED: Changed from UNION ALL to UNION to deduplicate
+    union  -- FIXED: Changed from UNION ALL to UNION to deduplicate
     
-    -- ✅ Add default "Unknown" status for records without legal_status
+    -- Add default "Unknown" status for records without legal_status
     select 'Không xác định' as legal_status
 )
 
 select
-    -- ✅ FIXED: Use hash-based ID instead of row_number() for stability
+    -- FIXED: Use hash-based ID instead of row_number() for stability
     abs(hash(legal_status)) % 2147483647 as legal_status_id,
     legal_status,
     

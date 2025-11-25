@@ -126,6 +126,13 @@ http://localhost:3000
 ### 3. Chạy Pipeline
 
 ```bash
+# Create connection
+docker exec airflow-scheduler airflow connections add 'spark_default' \
+    --conn-type 'spark' \
+    --conn-host 'spark://spark-master' \
+    --conn-port '7077' \
+    --conn-extra '{"deploy-mode": "client"}' 2>&1 | tail -5
+
 # Trigger DAG manually
 docker exec airflow-webserver airflow dags trigger end_to_end_lakehouse_pipeline
 

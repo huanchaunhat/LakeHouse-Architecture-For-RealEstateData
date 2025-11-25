@@ -1,6 +1,7 @@
 # Airflow & Provider
 apache-airflow[crypto,celery,postgres,hive,jdbc,mysql,spark,ssh, sensors]==2.6.1
 apache-airflow-providers-amazon==8.9.0
+apache-airflow-providers-apache-spark==4.0.1
 
 dbt-core==1.5.0
 dbt-spark==1.5.0

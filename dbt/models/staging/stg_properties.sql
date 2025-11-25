@@ -2,7 +2,8 @@
     materialized='incremental',
     file_format='delta',
     unique_key='property_id',
-    incremental_strategy='merge'
+    incremental_strategy='merge',
+    schema='silver'
 ) }}
 
 with source_data as (
@@ -10,7 +11,8 @@ with source_data as (
     select * from {{ source('raw_lakehouse', 'properties') }}
     
     {% if is_incremental() %}
-    where file_modification_time > (select max(updated_at_ts) from {{ this }})
+    -- Chỉ load records MỚI (có file_modification_time > max hiện tại)
+    where file_modification_time > (select coalesce(max(updated_at_ts), '1970-01-01') from {{ this }})
     {% endif %}
 
 ),
@@ -82,8 +84,12 @@ select
             )
     end as price_in_billions, -- Đơn vị: Tỷ VNĐ
 
-    -- 3. Chuẩn hóa Address (chỉ dùng address field vì ward/district/province đều NULL)
-    initcap(trim(address)) as address,
+    -- 3. Chuẩn hóa Address (sử dụng các trường địa chỉ chi tiết từ API)
+    -- FIXED: Use initcap + lower to normalize case + trim multiple spaces
+    initcap(trim(regexp_replace(address, '\\s+', ' '))) as address,
+    initcap(trim(regexp_replace(ward_raw, '\\s+', ' '))) as ward,
+    initcap(trim(regexp_replace(district_raw, '\\s+', ' '))) as district,
+    initcap(trim(regexp_replace(province_raw, '\\s+', ' '))) as province,
 
     -- 4. Chuẩn hóa cột Text
     initcap(trim(legal_status_raw)) as legal_status,
