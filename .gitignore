@@ -149,5 +149,11 @@ docker-volumes/
 # Log của dbt (nếu dự án dbt của bạn nằm trong thư mục con)
 **/dbt/logs/
 
+# Superset metadata database (contains user accounts, dashboards, configs)
+superset/superset.db
+superset/*.db
+superset/*.db-shm
+superset/*.db-wal
+
 .DS_Store
 .vscode/

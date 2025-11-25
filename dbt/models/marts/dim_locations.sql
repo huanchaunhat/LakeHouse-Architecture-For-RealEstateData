@@ -6,86 +6,68 @@
 ) }}
 
 -- Dimension table: Locations
--- Chuẩn hóa địa chỉ thành hierarchy (Province -> District -> Ward)
--- ✅ FIXED: Changed to incremental to preserve location_id across runs
+-- Uses structured location data from API (ward, district, province)
+-- These are parsed from Chotot API parameters
 
-with parsed_locations as (
+with location_data as (
     select 
-        coalesce(address, 'Unknown') as address,  -- ✅ Handle NULL addresses (FIXED: added comma)
-        
-        -- Extract location components from address
-        case 
-            when address is null then 'Unknown'
-            when address like '%Hồ Chí Minh%' or address like '%TP. HCM%' or address like '%Sài Gòn%' 
-                then 'Hồ Chí Minh'
-            when address like '%Hà Nội%' or address like '%Hanoi%'
-                then 'Hà Nội'
-            when address like '%Đà Nẵng%' or address like '%Da Nang%'
-                then 'Đà Nẵng'
-            when address like '%Bình Dương%'
-                then 'Bình Dương'
-            when address like '%Đồng Nai%'
-                then 'Đồng Nai'
-            when address like '%Cần Thơ%'
-                then 'Cần Thơ'
-            when address like '%Hải Phòng%'
-                then 'Hải Phòng'
-            else 'Khác'
-        end as province,
-        
-        -- Extract district (simplified - should be enhanced)
-        case 
-            when address is null then 'Unknown'
-            when address like '%Quận 1%' then 'Quận 1'
-            when address like '%Quận 2%' then 'Quận 2'
-            when address like '%Quận 3%' then 'Quận 3'
-            when address like '%Quận 4%' then 'Quận 4'
-            when address like '%Quận 5%' then 'Quận 5'
-            when address like '%Quận 6%' then 'Quận 6'
-            when address like '%Quận 7%' then 'Quận 7'
-            when address like '%Quận 8%' then 'Quận 8'
-            when address like '%Quận 9%' then 'Quận 9'
-            when address like '%Quận 10%' then 'Quận 10'
-            when address like '%Quận 11%' then 'Quận 11'
-            when address like '%Quận 12%' then 'Quận 12'
-            when address like '%Thủ Đức%' then 'Thủ Đức'
-            when address like '%Bình Thạnh%' then 'Bình Thạnh'
-            when address like '%Gò Vấp%' then 'Gò Vấp'
-            when address like '%Phú Nhuận%' then 'Phú Nhuận'
-            when address like '%Tân Bình%' then 'Tân Bình'
-            when address like '%Tân Phú%' then 'Tân Phú'
-            when address like '%Bình Tân%' then 'Bình Tân'
-            else 'Khác'
-        end as district
+        coalesce(address, 'Unknown') as address,
+        coalesce(ward, 'Unknown') as ward,
+        coalesce(district, 'Unknown') as district,
+        coalesce(province, 'Unknown') as province
         
     from {{ ref('stg_properties') }}
     where 
         data_quality_flag = 'VALID'
-        -- ✅ Don't filter out NULL addresses, we'll handle them
+        
+    {% if is_incremental() %}
+    -- Chỉ process locations từ properties MỚI
+    and address not in (select full_address from {{ this }})
+    {% endif %}
+),
+
+-- Deduplicate by address
+unique_locations as (
+    select 
+        address,
+        ward,
+        district,
+        province
+    from location_data
+    group by 
+        address,
+        ward,
+        district,
+        province
 )
 
 select
-    -- ✅ FIXED: Use hash-based ID instead of row_number() to ensure stability across runs
-    abs(hash(address)) % 2147483647 as location_id,  -- Generate stable ID from address
+    -- Generate stable ID from full address
+    abs(hash(address)) % 2147483647 as location_id,
     address as full_address,
-    province,
+    ward,
     district,
-    null as ward,  -- Can be enhanced with more parsing
+    province,
     
-    -- Categorize by region
+    -- Categorize by region based on province
     case 
-        when province in ('Hồ Chí Minh', 'Bình Dương', 'Đồng Nai', 'Vũng Tàu') 
+        when province in ('Hồ Chí Minh', 'Bình Dương', 'Đồng Nai', 'Bà Rịa - Vũng Tàu', 'Long An', 
+                         'Tiền Giang', 'Cần Thơ', 'An Giang', 'Bến Tre', 'Vĩnh Long', 'Đồng Tháp',
+                         'Trà Vinh', 'Sóc Trăng', 'Bạc Liêu', 'Cà Mau', 'Kiên Giang', 'Hậu Giang',
+                         'Tây Ninh', 'Bình Phước')
             then 'Miền Nam'
-        when province in ('Hà Nội', 'Hải Phòng', 'Quảng Ninh')
+        when province in ('Hà Nội', 'Hải Phòng', 'Quảng Ninh', 'Hải Dương', 'Hưng Yên', 'Bắc Ninh',
+                         'Bắc Giang', 'Thái Nguyên', 'Lạng Sơn', 'Cao Bằng', 'Hà Giang', 'Tuyên Quang',
+                         'Yên Bái', 'Lào Cai', 'Điện Biên', 'Lai Châu', 'Sơn La', 'Hòa Bình',
+                         'Phú Thọ', 'Vĩnh Phúc', 'Ninh Bình', 'Nam Định', 'Thái Bình')
             then 'Miền Bắc'
-        when province = 'Đà Nẵng'
+        when province in ('Đà Nẵng', 'Quảng Nam', 'Quảng Ngãi', 'Bình Định', 'Phú Yên', 'Khánh Hòa',
+                         'Ninh Thuận', 'Bình Thuận', 'Huế', 'Thừa Thiên Huế', 'Quảng Trị', 'Quảng Bình',
+                         'Hà Tĩnh', 'Nghệ An', 'Thanh Hóa', 'Kon Tum', 'Gia Lai', 'Đắk Lắk', 'Đắk Nông', 'Lâm Đồng')
             then 'Miền Trung'
+        when province = 'Unknown'
+            then 'Unknown'
         else 'Khác'
     end as region
 
-from parsed_locations
-group by 
-    address,
-    province,
-    district,
-    region  -- ✅ Removed ward from GROUP BY (it's always NULL)
+from unique_locations

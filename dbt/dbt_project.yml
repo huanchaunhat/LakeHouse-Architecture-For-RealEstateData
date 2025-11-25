@@ -16,7 +16,13 @@ clean-targets:
   - "target"
   - "dbt_packages"
 
-# ✅ Cấu hình theo kiến trúc Lakehouse chuẩn
+# Create databases before running models
+on-run-start:
+  - "CREATE DATABASE IF NOT EXISTS bronze"
+  - "CREATE DATABASE IF NOT EXISTS silver"
+  - "CREATE DATABASE IF NOT EXISTS gold"
+
+# Cấu hình theo kiến trúc Lakehouse chuẩn
 models:
   real_estate_lakehouse:
     # Staging models (Silver layer) → bronze database
@@ -24,8 +30,8 @@ models:
       +materialized: table
       +file_format: delta
 
-    # Marts models (Gold layer) → KHÔNG dùng +schema vì sẽ tạo gold_gold
-    # Thay vào đó: change profiles.yml target
+    # Marts models (Gold layer) → Use incremental for efficient updates
     marts:
-      +materialized: table
+      +materialized: incremental
       +file_format: delta
+      +incremental_strategy: merge

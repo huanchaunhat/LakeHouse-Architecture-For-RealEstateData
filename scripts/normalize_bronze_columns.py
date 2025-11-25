@@ -12,7 +12,6 @@ COLUMN_MAPPING = {
     "list_id": "list_id",
     "title": "title",
     "price": "price",
-    # "address": REMOVED - API address always NULL, use "Địa chỉ" instead
     "images": "images",
     "file_modification_time": "file_modification_time",
     "Diện tích đất": "land_area_raw",
@@ -34,7 +33,7 @@ COLUMN_MAPPING = {
     "Nội thất": "furniture_raw",
     "Căn góc": "corner_unit_raw",
     "Đặc điểm nhà/đất": "property_features_raw",
-    "Địa chỉ": "address",  # ✅ FIXED: Map "Địa chỉ" to "address" (primary address field)
+    "Địa chỉ": "address", 
     "Phường, thị xã, thị trấn": "ward_raw",
     "Quận, Huyện": "district_raw",
     "Tỉnh, thành phố": "province_raw",
@@ -68,12 +67,12 @@ def normalize_column_names():
     print("Normalize Bronze Columns - Incremental")
     print("=" * 50)
     
-    # ✅ Check if source table exists first
+    # Check if source table exists first
     try:
         spark.sql(f"DESCRIBE TABLE {SOURCE_TABLE}")
-        print(f"\n✅ Source table exists: {SOURCE_TABLE}")
+        print(f"\nSource table exists: {SOURCE_TABLE}")
     except:
-        print(f"\n⚠️  Source table does not exist: {SOURCE_TABLE}")
+        print(f"\nSource table does not exist: {SOURCE_TABLE}")
         print("Skipping normalization (table will be created when data is loaded)")
         spark.stop()
         return
@@ -85,7 +84,7 @@ def normalize_column_names():
     print(f"Source columns: {len(current_columns)}")
     
     # Build column mapping with deduplication
-    # ✅ FIX: Skip duplicate columns instead of adding suffix (_1, _2...)
+    # FIX: Skip duplicate columns instead of adding suffix (_1, _2...)
     SKIP_COLUMNS = ["address"]  # Skip API address (always NULL)
     
     final_mapping = {}
@@ -95,7 +94,7 @@ def normalize_column_names():
     skipped_explicit = 0
     
     for old_col in current_columns:
-        # ✅ Explicitly skip unwanted columns
+        # Explicitly skip unwanted columns
         if old_col in SKIP_COLUMNS:
             skipped_explicit += 1
             continue
@@ -109,7 +108,7 @@ def normalize_column_names():
             # Auto-generate safe name
             new_name = old_col.replace(" ", "_").replace(",", "").replace(".", "").replace("/", "_").lower()
         
-        # ✅ Skip duplicates (keep only first occurrence)
+        # Skip duplicates (keep only first occurrence)
         if new_name in used_names:
             skipped_duplicates += 1
             continue
@@ -154,12 +153,31 @@ def normalize_column_names():
         print("Table created")
     
     # Always register table in Hive Metastore (in case it's not registered yet)
-    spark.sql(f"CREATE TABLE IF NOT EXISTS {NORMALIZED_TABLE} USING DELTA LOCATION '{NORMALIZED_LOCATION}'")
-    spark.sql(f"REFRESH TABLE {NORMALIZED_TABLE}")
+    print(f"\nRegistering table in Hive Metastore...")
+    try:
+        spark.sql(f"CREATE TABLE IF NOT EXISTS {NORMALIZED_TABLE} USING DELTA LOCATION '{NORMALIZED_LOCATION}'")
+        print(f"Table registered: {NORMALIZED_TABLE}")
+    except Exception as e:
+        print(f"Warning: Failed to create table (might already exist): {e}")
     
-    total_records = spark.sql(f"SELECT COUNT(*) as cnt FROM {NORMALIZED_TABLE}").collect()[0]['cnt']
-    print(f"\nCOMPLETED!")
-    print(f"  - Total records in normalized table: {total_records}")
+    # Force refresh to sync metadata
+    try:
+        spark.sql(f"REFRESH TABLE {NORMALIZED_TABLE}")
+        print(f"Table refreshed: {NORMALIZED_TABLE}")
+    except Exception as e:
+        print(f"Warning: Failed to refresh table: {e}")
+    
+    # Verify table exists and get count
+    try:
+        total_records = spark.sql(f"SELECT COUNT(*) as cnt FROM {NORMALIZED_TABLE}").collect()[0]['cnt']
+        print(f"\nCOMPLETED!")
+        print(f"  - Total records in normalized table: {total_records}")
+    except Exception as e:
+        print(f"Error: Cannot query table {NORMALIZED_TABLE}: {e}")
+        # Try querying directly from Delta location as fallback
+        total_records = spark.read.format("delta").load(NORMALIZED_LOCATION).count()
+        print(f"\nCOMPLETED (queried from Delta location)!")
+        print(f"  - Total records in normalized table: {total_records}")
     
     spark.stop()
 

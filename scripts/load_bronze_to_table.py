@@ -159,13 +159,17 @@ def run_load_to_bronze_table():
         else:
             print("  Creating new table...")
             df_new.write.format("delta").mode("overwrite").save(TABLE_LOCATION)
+            print(f"\nRegistering table in Hive Metastore...")
             spark.sql(f"CREATE TABLE IF NOT EXISTS {FULL_TABLE_NAME} USING DELTA LOCATION '{TABLE_LOCATION}'")
+            print(f"Table registered: {FULL_TABLE_NAME}")
         
         print(f"\nUpdating processed files list...")
         all_processed = processed_files.union(set(new_files))
         save_processed_files(all_processed)
         
+        print(f"\nRefreshing table metadata...")
         spark.sql(f"REFRESH TABLE {FULL_TABLE_NAME}")
+        print(f"Table refreshed: {FULL_TABLE_NAME}")
         
         total_records = spark.sql(f"SELECT COUNT(*) as cnt FROM {FULL_TABLE_NAME}").collect()[0]['cnt']
         print(f"\nCOMPLETED!")

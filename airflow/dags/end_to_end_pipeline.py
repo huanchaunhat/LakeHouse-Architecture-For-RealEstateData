@@ -7,6 +7,7 @@ from io import BytesIO
 
 from airflow.decorators import dag, task
 from airflow.operators.bash import BashOperator
+from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook # Import S3Hook
 
 # ==================== CONFIGS ====================
@@ -163,45 +164,69 @@ def elt_pipeline():
 
 
     # Task 2: Run Spark to load .jsonl -> Delta table
-    load_bronze_to_table = BashOperator(
+    load_bronze_to_table = SparkSubmitOperator(
         task_id='load_bronze_to_table',
-        bash_command="""
-docker exec spark-master /opt/bitnami/spark/bin/spark-submit \
-    --master spark://spark-master:7077 \
-    --packages io.delta:delta-core_2.12:2.2.0,org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262 \
-    --conf spark.hadoop.fs.s3a.endpoint=http://minio:9000 \
-    --conf spark.hadoop.fs.s3a.access.key=minio \
-    --conf spark.hadoop.fs.s3a.secret.key=minio123 \
-    --conf spark.hadoop.fs.s3a.path.style.access=true \
-    --conf spark.hadoop.fs.s3a.connection.ssl.enabled=false \
-    --conf spark.sql.warehouse.dir=s3a://lakehouse/warehouse \
-    --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
-    --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
-    --conf spark.hadoop.fs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem \
-    --conf spark.hadoop.hive.metastore.uris=thrift://hive-metastore:9083 \
-    /opt/bitnami/spark/scripts/load_bronze_to_table.py
-        """
+        application='/usr/local/airflow/scripts/load_bronze_to_table.py',
+        conn_id='spark_default',
+        packages='io.delta:delta-core_2.12:2.2.0,org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262',
+        conf={
+            'spark.hadoop.fs.s3a.endpoint': 'http://minio:9000',
+            'spark.hadoop.fs.s3a.access.key': 'minio',
+            'spark.hadoop.fs.s3a.secret.key': 'minio123',
+            'spark.hadoop.fs.s3a.path.style.access': 'true',
+            'spark.hadoop.fs.s3a.connection.ssl.enabled': 'false',
+            'spark.sql.warehouse.dir': 's3a://lakehouse/warehouse',
+            'spark.sql.extensions': 'io.delta.sql.DeltaSparkSessionExtension',
+            'spark.sql.catalog.spark_catalog': 'org.apache.spark.sql.delta.catalog.DeltaCatalog',
+            'spark.hadoop.fs.s3a.impl': 'org.apache.hadoop.fs.s3a.S3AFileSystem',
+            'spark.hadoop.hive.metastore.uris': 'thrift://hive-metastore:9083',
+
+             # --- Network config ---
+            "spark.driver.host": "airflow-scheduler",
+            "spark.driver.bindAddress": "0.0.0.0",
+            "spark.driver.port": "30000",
+            "spark.blockManager.port": "30001",
+
+            # --- Resource config ---
+            "spark.dynamicAllocation.enabled": "false",
+            "spark.cores.max": "2",
+            "spark.executor.memory": "512m",
+            "spark.executor.cores": "1",
+            "spark.sql.shuffle.partitions": "16"    
+        }
     )
 
     # Task 2.5: Normalize column names (Vietnamese to English)
-    normalize_bronze_columns = BashOperator(
+    normalize_bronze_columns = SparkSubmitOperator(
         task_id='normalize_bronze_columns',
-        bash_command="""
-docker exec spark-master /opt/bitnami/spark/bin/spark-submit \
-    --master spark://spark-master:7077 \
-    --packages io.delta:delta-core_2.12:2.2.0,org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262 \
-    --conf spark.hadoop.fs.s3a.endpoint=http://minio:9000 \
-    --conf spark.hadoop.fs.s3a.access.key=minio \
-    --conf spark.hadoop.fs.s3a.secret.key=minio123 \
-    --conf spark.hadoop.fs.s3a.path.style.access=true \
-    --conf spark.hadoop.fs.s3a.connection.ssl.enabled=false \
-    --conf spark.sql.warehouse.dir=s3a://lakehouse/warehouse \
-    --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
-    --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog \
-    --conf spark.hadoop.fs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem \
-    --conf spark.hadoop.hive.metastore.uris=thrift://hive-metastore:9083 \
-    /opt/bitnami/spark/scripts/normalize_bronze_columns.py
-        """
+        application='/usr/local/airflow/scripts/normalize_bronze_columns.py',
+        conn_id='spark_default',
+        packages='io.delta:delta-core_2.12:2.2.0,org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262',
+        conf={
+            'spark.hadoop.fs.s3a.endpoint': 'http://minio:9000',
+            'spark.hadoop.fs.s3a.access.key': 'minio',
+            'spark.hadoop.fs.s3a.secret.key': 'minio123',
+            'spark.hadoop.fs.s3a.path.style.access': 'true',
+            'spark.hadoop.fs.s3a.connection.ssl.enabled': 'false',
+            'spark.sql.warehouse.dir': 's3a://lakehouse/warehouse',
+            'spark.sql.extensions': 'io.delta.sql.DeltaSparkSessionExtension',
+            'spark.sql.catalog.spark_catalog': 'org.apache.spark.sql.delta.catalog.DeltaCatalog',
+            'spark.hadoop.fs.s3a.impl': 'org.apache.hadoop.fs.s3a.S3AFileSystem',
+            'spark.hadoop.hive.metastore.uris': 'thrift://hive-metastore:9083',
+
+            # --- Network config ---
+            "spark.driver.host": "airflow-scheduler",
+            "spark.driver.bindAddress": "0.0.0.0",
+            "spark.driver.port": "30002",
+            "spark.blockManager.port": "30003",
+
+            # --- Resource config ---
+            "spark.dynamicAllocation.enabled": "false",
+            "spark.cores.max": "2",
+            "spark.executor.memory": "512m",
+            "spark.executor.cores": "1",
+            "spark.sql.shuffle.partitions": "16"
+        }
     )
 
     # Task 2.7: Restart and wait for Thrift Server (ensure clean state)

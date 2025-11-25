@@ -7,12 +7,12 @@
 
 -- Dimension table: Property Attributes
 -- Chứa thông tin thuộc tính của property (slowly changing dimension type 1 - overwrite)
--- ✅ FIXED: Changed to incremental to update attributes when they change
+-- FIXED: Changed to incremental to update attributes when they change
 
 with deduplicated as (
     select
         property_id,
-        title,  -- ✅ Keep NULL as-is for optional fields
+        title,  -- Keep NULL as-is for optional fields
         
         -- Physical attributes - KEEP NULL (don't replace with 0)
         area,  -- Critical field - will be filtered in fact table
@@ -42,9 +42,17 @@ with deduplicated as (
     from {{ ref('stg_properties') }}
     where 
         data_quality_flag = 'VALID'
-        -- ✅ Filter critical NULLs here
+        -- Filter critical NULLs here
         and property_id is not null
         and title is not null
+        
+    {% if is_incremental() %}
+    -- Chỉ process properties MỚI hoặc UPDATED
+    and (
+        property_id not in (select property_id from {{ this }})
+        or updated_at_ts > (select max(valid_from) from {{ this }})
+    )
+    {% endif %}
 )
 
 select
@@ -63,4 +71,4 @@ select
     is_current
 
 from deduplicated
-where rn = 1  -- ✅ Keep only latest record per property_id
+where rn = 1  -- Keep only latest record per property_id

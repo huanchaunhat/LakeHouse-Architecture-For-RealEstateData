@@ -9,7 +9,7 @@ lakehouse_spark:
       method: thrift
       host: spark-thrift-server
       port: 10000
-      schema: gold # ✅ Gold layer models ghi vào gold database
+      schema: gold # Gold layer models ghi vào gold database
       threads: 1
       connect_timeout: 30
       auth: NOSASL
