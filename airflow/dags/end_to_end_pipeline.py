@@ -181,18 +181,6 @@ def elt_pipeline():
             'spark.hadoop.fs.s3a.impl': 'org.apache.hadoop.fs.s3a.S3AFileSystem',
             'spark.hadoop.hive.metastore.uris': 'thrift://hive-metastore:9083',
 
-             # --- Network config ---
-            "spark.driver.host": "airflow-scheduler",
-            "spark.driver.bindAddress": "0.0.0.0",
-            "spark.driver.port": "30000",
-            "spark.blockManager.port": "30001",
-
-            # --- Resource config ---
-            "spark.dynamicAllocation.enabled": "false",
-            "spark.cores.max": "2",
-            "spark.executor.memory": "512m",
-            "spark.executor.cores": "1",
-            "spark.sql.shuffle.partitions": "16"    
         }
     )
 
@@ -214,18 +202,6 @@ def elt_pipeline():
             'spark.hadoop.fs.s3a.impl': 'org.apache.hadoop.fs.s3a.S3AFileSystem',
             'spark.hadoop.hive.metastore.uris': 'thrift://hive-metastore:9083',
 
-            # --- Network config ---
-            "spark.driver.host": "airflow-scheduler",
-            "spark.driver.bindAddress": "0.0.0.0",
-            "spark.driver.port": "30002",
-            "spark.blockManager.port": "30003",
-
-            # --- Resource config ---
-            "spark.dynamicAllocation.enabled": "false",
-            "spark.cores.max": "2",
-            "spark.executor.memory": "512m",
-            "spark.executor.cores": "1",
-            "spark.sql.shuffle.partitions": "16"
         }
     )
 
