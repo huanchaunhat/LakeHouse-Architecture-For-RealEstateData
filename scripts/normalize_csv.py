@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Load CSV vào Bronze (Giả lập JSON) - Phiên bản Sạch & Fix Lỗi Duplicate
+Load CSV vào Bronze
 """
 
 import sys
@@ -72,7 +72,7 @@ def run_load_csv():
     # --- NHÓM 2: MAPPING CỘT CÓ SẴN ---
     for csv_col, json_col in SIMPLE_MAPPING.items():
         if csv_col in df_csv.columns:
-            # Ép về String hết để an toàn
+            # Ép về String hết
             select_exprs.append(col(f"`{csv_col}`").cast("string").alias(json_col))
         else:
             select_exprs.append(lit(None).cast("string").alias(json_col))
