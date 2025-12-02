@@ -13,7 +13,7 @@ models:
         description: "Tiêu đề tin đăng"
 
       - name: area
-        description: "Diện tích đất (m²), đã loại bỏ dấu phẩy và convert sang double. Có thể NULL nếu listing không có thông tin diện tích."
+        descripminioadmintion: "Diện tích đất (m²), đã loại bỏ dấu phẩy và convert sang double. Có thể NULL nếu listing không có thông tin diện tích."
         # Note: dbt_expectations package tests commented out due to compatibility issues
         # tests:
         #   - dbt_expectations.expect_column_values_to_be_positive:

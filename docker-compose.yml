@@ -11,18 +11,6 @@ services:
     networks:
       - data_network
 
-  postgresql:
-    image: postgres:15
-    container_name: postgresql
-    volumes:
-      - ./docker-volumes/psql:/var/lib/postgresql/data
-    ports:
-      - "5433:5432"
-    env_file:
-      - .env
-    networks:
-      - data_network
-
   minio:
     hostname: minio
     image: "minio/minio"
@@ -150,16 +138,6 @@ services:
     volumes:
       - ./spark/spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf
       - ./spark/hive-site.xml:/opt/bitnami/spark/conf/hive-site.xml
-    networks:
-      - data_network
-
-  metabase:
-    image: metabase/metabase:latest
-    container_name: "metabase"
-    ports:
-      - "3000:3000"
-    env_file:
-      - .env
     networks:
       - data_network
 
@@ -303,18 +281,18 @@ services:
   #   networks:
   #     - data_network
 
-  app:
-    build:
-      context: ./app
-      dockerfile: Dockerfile
-    container_name: app
-    ports:
-      - "8051:8051"
-    command: bash -c "export PYTHONPATH=/home/app"
-    volumes:
-      - ./app:/home/app
-    networks:
-      - data_network
+  # app:
+  #   build:
+  #     context: ./app
+  #     dockerfile: Dockerfile
+  #   container_name: app
+  #   ports:
+  #     - "8051:8051"
+  #   command: bash -c "export PYTHONPATH=/home/app"
+  #   volumes:
+  #     - ./app:/home/app
+  #   networks:
+  #     - data_network
 
 networks:
   data_network:

@@ -56,7 +56,7 @@
 - is_current              boolean
 ```
 
-### 📈 **gold.fct_properties** (15 columns) ⭐ Main Fact Table
+### 📈 **gold.fct_properties** (15 columns) Main Fact Table
 
 ```sql
 - property_id              string       -- PK, FK to dim_properties
