@@ -1,22 +1,3 @@
-### 📅 **gold.dim_date** (14 columns)
-
-```sql
-- date_day                date         -- Primary key (YYYY-MM-DD)
-- year                    int          -- 2023-2026
-- quarter                 int          -- 1-4
-- month                   int          -- 1-12
-- day                     int          -- 1-31
-- day_of_week             int          -- 1=Sunday, 7=Saturday
-- day_of_year             int          -- 1-365/366
-- week_of_year            int          -- ISO week number
-- month_name              string       -- "January", "February", etc.
-- day_name                string       -- "Monday", "Tuesday", etc.
-- is_weekend              boolean      -- TRUE for Sat/Sun
-- is_current_month        boolean      -- TRUE if current month
-- quarter_name            string       -- "Q1 2025", etc.
-- year_month              string       -- "2025-01", etc.
-```
-
 ### 🏛️ **gold.dim_legal_status** (4 columns)
 
 ```sql
@@ -56,7 +37,7 @@
 - is_current              boolean
 ```
 
-### 📈 **gold.fct_properties** (15 columns) ⭐ Main Fact Table
+### 📈 **gold.fct_properties** (15 columns) Main Fact Table
 
 ```sql
 - property_id              string       -- PK, FK to dim_properties

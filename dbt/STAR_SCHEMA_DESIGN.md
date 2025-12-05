@@ -25,19 +25,8 @@ Gold layer được thiết kế theo **Star Schema** - một design pattern t�
        │ region          │                                 │
        └────────┬────────┘                                 │
                 │                                          │
-                │         ┌─────────────────┐              │
-                │         │   dim_date      │              │
-                │         ├─────────────────┤              │
-                │         │ date_day (PK)   │              │
-                │         │ year            │              │
-                │         │ quarter         │              │
-                │         │ month           │              │
-                │         │ day_of_week     │              │
-                │         │ is_weekend      │              │
-                │         │ year_month      │              │
-                │         └────────┬────────┘              │
-                │                  │                       │
-                └──────────────────┼───────────────────────┘
+                │                                          │
+                └──────────────────┬───────────────────────┘
                                    │
                           ┌────────▼────────────┐
                           │  fct_properties     │ ◄─── CENTRAL FACT TABLE
@@ -45,7 +34,7 @@ Gold layer được thiết kế theo **Star Schema** - một design pattern t�
                           │ property_id (PK)    │
                           │ location_id (FK)    │──────┐
                           │ legal_status_id(FK) │──────┤
-                          │ date_key (FK)       │──────┤
+                          │ date_key (DATE)     │      │
                           │ ─────────────────── │      │
                           │ price_in_billions   │◄─ MEASURES (15 columns)
                           │ area                │
@@ -99,7 +88,7 @@ Gold layer được thiết kế theo **Star Schema** - một design pattern t�
 
 ## 📁 CẤU TRÚC TABLES
 
-### **Dimension Tables (4):**
+### **Dimension Tables (3):**
 
 #### 1. `dim_locations` (6 columns)
 
@@ -140,20 +129,6 @@ Gold layer được thiết kế theo **Star Schema** - một design pattern t�
 - **SCD**: Type 2 - Track changes over time (valid_from/to, is_current flag)
 - **File**: `dbt/models/marts/dim_properties.sql`
 
-#### 4. `dim_date` (14 columns)
-
-- **Purpose**: Standard calendar dimension for time-based analysis
-- **Columns**:
-  - `date_day` (DATE, PK)
-  - `year`, `quarter`, `month`, `day`
-  - `day_of_week`, `day_of_year`, `week_of_year`
-  - `month_name`, `day_name`
-  - `is_weekend`, `is_current_month`
-  - `quarter_name`, `year_month`
-- **Key**: date_day (natural key)
-- **Scope**: 2023-01-01 to 2026-12-31 (4 years, 1,461 rows)
-- **File**: `dbt/models/marts/dim_date.sql`
-
 ### **Fact Tables (3):**
 
 #### 1. `fct_properties` (15 columns) - Transaction Fact ⭐
@@ -163,8 +138,9 @@ Gold layer được thiết kế theo **Star Schema** - một design pattern t�
 - **Foreign Keys**:
   - `location_id` (INT) → dim_locations.location_id
   - `legal_status_id` (INT) → dim_legal_status.legal_status_id
-  - `date_key` (DATE) → dim_date.date_day
   - `property_id` (STRING) → dim_properties.property_id
+- **Date Field**:
+  - `date_key` (DATE) - Derived from updated_at_ts (YYYY-MM-DD format)
 - **Measures** (Additive & Semi-additive):
   - `price_in_billions` (DOUBLE) - Listing price in billions VNĐ
   - `area` (DOUBLE) - Property area in m²
