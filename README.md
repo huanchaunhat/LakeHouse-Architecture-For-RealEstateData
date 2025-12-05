@@ -211,34 +211,6 @@ URI: hive://spark-thrift-server:10000?auth=NOSASL
 
 ```
 
-## Đánh Giá Kiến Trúc
-
-### Điểm Mạnh
-
-Kiến trúc Medallion đầy đủ (Bronze-Silver-Gold)
-ACID transactions với Delta Lake
-Data quality monitoring
-Automated pipeline với Airflow
-SQL-based transformations với dbt
-Scalable với Spark distributed processing
-Version control cho data transformations
-
-### Điểm Cần Cải Thiện
-
-Metabase integration phức tạp
-Chưa có incremental loading (full reload mỗi ngày)
-Chưa có alerting khi pipeline fail
-Chưa có data lineage visualization
-
-## Best Practices Implemented
-
-1. **Deduplication**: Latest record wins
-2. **Data Quality Flags**: Track data issues
-3. **Outlier Removal**: In Gold layer
-4. **Schema Evolution**: Với Delta Lake
-5. **Idempotency**: Airflow tasks can retry safely
-6. **Documentation**: dbt docs & schema tests
-
 ## Contributors
 
 Data Engineering Team

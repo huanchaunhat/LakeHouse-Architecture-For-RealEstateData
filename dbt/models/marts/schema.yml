@@ -62,23 +62,6 @@ models:
       - name: description
         description: "Mô tả chi tiết"
 
-  - name: dim_date
-    description: "Dimension - Date dimension chuẩn"
-    columns:
-      - name: date_day
-        description: "Date primary key"
-        tests:
-          - unique
-          - not_null
-      - name: year
-        description: "Năm"
-      - name: quarter
-        description: "Quý"
-      - name: month
-        description: "Tháng"
-      - name: is_weekend
-        description: "Flag cuối tuần"
-
   # ========== FACT TABLES ==========
 
   - name: fct_properties
@@ -97,7 +80,7 @@ models:
         description: "Foreign key → dim_legal_status"
 
       - name: date_key
-        description: "Foreign key → dim_date"
+        description: "Date key (YYYY-MM-DD) from updated_at_ts"
 
       - name: price_in_billions
         description: "Measure: Giá (Tỷ VNĐ)"
