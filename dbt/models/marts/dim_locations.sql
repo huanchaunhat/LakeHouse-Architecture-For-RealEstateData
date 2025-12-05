@@ -51,7 +51,7 @@ select
     
     -- Categorize by region based on province
     case 
-        when province in ('Hồ Chí Minh', 'Bình Dương', 'Đồng Nai', 'Bà Rịa - Vũng Tàu', 'Long An', 
+        when province in ('Hồ Chí Minh','Tp Hồ Chí Minh' 'Bình Dương', 'Đồng Nai', 'Bà Rịa - Vũng Tàu', 'Long An', 
                          'Tiền Giang', 'Cần Thơ', 'An Giang', 'Bến Tre', 'Vĩnh Long', 'Đồng Tháp',
                          'Trà Vinh', 'Sóc Trăng', 'Bạc Liêu', 'Cà Mau', 'Kiên Giang', 'Hậu Giang',
                          'Tây Ninh', 'Bình Phước')
