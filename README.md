@@ -6,7 +6,7 @@ Hệ thống Lakehouse hoàn chỉnh để thu thập, xử lý và phân tích 
 
 ## Kiến Trúc Hệ Thống
 
-![Sơ đồ kiến trúc hệ thống](.image/kientruchethong.png)
+![Sơ đồ kiến trúc hệ thống](.image/Kientruchethong.png)
 
 ## Quy Trình Hoạt Động
 ```
