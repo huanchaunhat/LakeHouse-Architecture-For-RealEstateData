@@ -122,8 +122,8 @@ http://localhost:8081
 # MinIO Console
 http://localhost:9001
 
-# Metabase
-http://localhost:3000
+# Apache Superset
+http://localhost:8089
 ```
 
 ### 3. Chạy Pipeline
