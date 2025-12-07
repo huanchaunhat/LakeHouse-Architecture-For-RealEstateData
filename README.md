@@ -6,6 +6,9 @@ Hệ thống Lakehouse hoàn chỉnh để thu thập, xử lý và phân tích 
 
 ## Kiến Trúc Hệ Thống
 
+![Sơ đồ kiến trúc hệ thống](.image/kientruchethong.png)
+
+## Quy Trình Hoạt Động
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        DATA SOURCES                              │
@@ -55,7 +58,7 @@ Hệ thống Lakehouse hoàn chỉnh để thu thập, xử lý và phân tích 
                          ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │                   VISUALIZATION                                  │
-│              Metabase (Connect via Spark Thrift)                 │
+│              Apache Superset (Connect via Spark Thrift)          │
 │              - Dashboards                                        │
 │              - Ad-hoc queries                                    │
 └─────────────────────────────────────────────────────────────────┘
@@ -71,7 +74,7 @@ Hệ thống Lakehouse hoàn chỉnh để thu thập, xử lý và phân tích 
 | **Catalog**        | Hive Metastore | Metadata management            |
 | **Transformation** | dbt            | SQL-based transformations      |
 | **Format**         | Delta Lake     | ACID transactions, time travel |
-| **Visualization**  | Metabase       | BI dashboards                  |
+| **Visualization**  | Apache Superset| BI dashboards                  |
 | **Container**      | Docker Compose | Infrastructure as code         |
 
 ## Cấu Trúc Dự Án
