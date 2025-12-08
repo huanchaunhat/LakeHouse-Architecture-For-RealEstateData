@@ -43,7 +43,6 @@ COLUMN_MAPPING = {
     "Loại hình đất": "land_type_raw",
     "Loại hình văn phòng": "office_type_raw",
     "Mã căn": "unit_code_raw",
-    "Mã lô": "lot_code_raw",
     "Tên phân khu": "subdivision_name_raw",
     "Tên phân khu/lô": "subdivision_lot_raw",
     "Số tiền cọc": "deposit_amount_raw",
