@@ -39,8 +39,8 @@ select
     file_modification_time as updated_at_ts, -- Lấy thời gian file mới nhất
     current_timestamp() as created_at, -- Thời gian tạo record trong Silver
 
-    -- 1. Chuẩn hóa Area, Numbers (FIX: ưu tiên area_raw và usable_area_raw thay vì land_area_raw)
-    -- NOTE: land_area_raw = 100% NULL, area_raw có 39.8% data, usable_area_raw có 25.6% data
+    -- 1. Chuẩn hóa Area, Numbers
+    
     coalesce(
         cast(regexp_replace(regexp_extract(area_raw, r'([\d,.]+)', 1), ',', '.') as double),
         cast(regexp_replace(regexp_extract(usable_area_raw, r'([\d,.]+)', 1), ',', '.') as double),
@@ -58,7 +58,7 @@ select
     cast(regexp_extract(bedrooms_raw, r'(\d+)', 1) as int) as bedrooms,
     cast(regexp_extract(bathrooms_raw, r'(\d+)', 1) as int) as bathrooms,
 
-    -- 2. Chuẩn hóa Price (FIX: xử lý dấu phẩy và giá thỏa thuận)
+    -- 2. Chuẩn hóa Price
     case
         when lower(price) like '%tỷ%' then 
             cast(
@@ -85,7 +85,6 @@ select
     end as price_in_billions, -- Đơn vị: Tỷ VNĐ
 
     -- 3. Chuẩn hóa Address (sử dụng các trường địa chỉ chi tiết từ API)
-    -- FIXED: Use initcap + lower to normalize case + trim multiple spaces
     initcap(trim(regexp_replace(address, '\\s+', ' '))) as address,
     initcap(trim(regexp_replace(ward_raw, '\\s+', ' '))) as ward,
     initcap(trim(regexp_replace(district_raw, '\\s+', ' '))) as district,

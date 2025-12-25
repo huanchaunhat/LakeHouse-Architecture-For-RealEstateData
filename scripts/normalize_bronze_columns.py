@@ -85,8 +85,8 @@ def normalize_column_names():
     print(f"Source columns: {len(current_columns)}")
     
     # Build column mapping with deduplication
-    # FIX: Skip duplicate columns instead of adding suffix (_1, _2...)
-    SKIP_COLUMNS = ["address"]  # Skip API address (always NULL)
+   
+    SKIP_COLUMNS = ["address"] 
     
     final_mapping = {}
     used_names = set()
