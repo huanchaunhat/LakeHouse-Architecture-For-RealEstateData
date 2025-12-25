@@ -30,7 +30,7 @@ SEEN_FILE = f"{BRONZE_PREFIX}list_ids.txt"
 
 # ==================== HELPER FUNCTIONS ====================
 
-def fetch_list(offset=0, limit=20):
+def fetch_list(offset=0, limit=LIMIT):
     """Fetch advertisement list from Chotot"""
     try:
         params = {"cg": 1000, "o": offset, "limit": limit}
