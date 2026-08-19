@@ -1,0 +1,241 @@
+name: realestate-lakehouse
+
+x-spark-common: &spark-common
+  build:
+    context: ./spark
+  env_file: .env.local
+  restart: unless-stopped
+  networks: [lakehouse]
+
+x-airflow-common: &airflow-common
+  build:
+    context: ./airflow
+  env_file: .env.local
+  restart: unless-stopped
+  user: "${AIRFLOW_UID:-1000}:0"
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: mysql+mysqldb://${AIRFLOW_MYSQL_USER}:${AIRFLOW_MYSQL_PASSWORD}@airflow-db:3306/${AIRFLOW_MYSQL_DATABASE}
+  entrypoint: ["/bin/bash", "-c"]
+  volumes:
+    - ./airflow/dags:/usr/local/airflow/dags
+    - ./airflow/logs:/usr/local/airflow/logs
+    - ./airflow/plugins:/usr/local/airflow/plugins
+    - ./scripts:/usr/local/airflow/scripts
+    - ./dbt:/opt/airflow/dbt
+  networks: [lakehouse]
+
+services:
+  metastore-db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${METASTORE_MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${METASTORE_MYSQL_DATABASE}
+      MYSQL_USER: ${METASTORE_MYSQL_USER}
+      MYSQL_PASSWORD: ${METASTORE_MYSQL_PASSWORD}
+    command: ["--default-authentication-plugin=mysql_native_password"]
+    ports: ["3308:3306"]
+    volumes: [metastore_db:/var/lib/mysql]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [lakehouse]
+
+  minio:
+    image: minio/minio:RELEASE.2025-07-23T15-54-02Z
+    restart: unless-stopped
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [minio_data:/data]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [lakehouse]
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-07-21T05-28-08Z
+    depends_on:
+      minio: {condition: service_healthy}
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:-lakehouse}
+    entrypoint: >-
+      /bin/sh -c '
+      mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}";
+      mc mb --ignore-existing "local/$${MINIO_BUCKET}";
+      mc anonymous set none "local/$${MINIO_BUCKET}";
+      '
+    networks: [lakehouse]
+
+  hive-metastore:
+    image: bitsondatadev/hive-metastore:latest
+    restart: unless-stopped
+    depends_on:
+      metastore-db: {condition: service_healthy}
+      minio: {condition: service_healthy}
+    environment:
+      METASTORE_DB_HOSTNAME: metastore-db
+      METASTORE_MYSQL_DATABASE: ${METASTORE_MYSQL_DATABASE}
+      METASTORE_MYSQL_USER: ${METASTORE_MYSQL_USER}
+      METASTORE_MYSQL_PASSWORD: ${METASTORE_MYSQL_PASSWORD}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+    ports: ["9083:9083"]
+    volumes:
+      - ./hive-metastore/metastore-site.local.xml:/opt/apache-hive-metastore-3.0.0-bin/conf/metastore-site.xml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 9083"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+    networks: [lakehouse]
+
+  spark-master:
+    <<: *spark-common
+    environment:
+      SPARK_MODE: master
+      SPARK_RPC_AUTHENTICATION_ENABLED: "no"
+      SPARK_RPC_ENCRYPTION_ENABLED: "no"
+      SPARK_SSL_ENABLED: "no"
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+    ports: ["7077:7077", "8081:8080"]
+    volumes:
+      - ./spark/spark-defaults.local.conf:/opt/bitnami/spark/conf/spark-defaults.conf:ro
+      - ./scripts:/opt/bitnami/spark/scripts
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 7077"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  spark-worker:
+    <<: *spark-common
+    depends_on:
+      spark-master: {condition: service_healthy}
+    environment:
+      SPARK_MODE: worker
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_WORKER_MEMORY: ${SPARK_WORKER_MEMORY:-2G}
+      SPARK_WORKER_CORES: ${SPARK_WORKER_CORES:-2}
+      SPARK_RPC_AUTHENTICATION_ENABLED: "no"
+      SPARK_RPC_ENCRYPTION_ENABLED: "no"
+      SPARK_SSL_ENABLED: "no"
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+
+  spark-thrift-server:
+    <<: *spark-common
+    depends_on:
+      spark-master: {condition: service_healthy}
+      hive-metastore: {condition: service_healthy}
+      minio-init: {condition: service_completed_successfully}
+    command: >-
+      /opt/bitnami/spark/sbin/start-thriftserver.sh
+      --master spark://spark-master:7077
+      --hiveconf hive.metastore.uris=thrift://hive-metastore:9083
+      --conf spark.sql.shuffle.partitions=8
+      && tail -F /opt/bitnami/spark/logs/*
+    environment:
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+    ports: ["10000:10000", "4040:4040"]
+    volumes:
+      - ./spark/spark-defaults.local.conf:/opt/bitnami/spark/conf/spark-defaults.conf:ro
+      - ./spark/hive-site.xml:/opt/bitnami/spark/conf/hive-site.xml:ro
+
+  airflow-db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${AIRFLOW_MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${AIRFLOW_MYSQL_DATABASE}
+      MYSQL_USER: ${AIRFLOW_MYSQL_USER}
+      MYSQL_PASSWORD: ${AIRFLOW_MYSQL_PASSWORD}
+    command: ["--default-authentication-plugin=mysql_native_password"]
+    volumes: [airflow_db:/var/lib/mysql]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [lakehouse]
+
+  airflow-init:
+    <<: *airflow-common
+    restart: "no"
+    depends_on:
+      airflow-db: {condition: service_healthy}
+    command: >-
+      airflow db migrate &&
+      airflow users create --username '${AIRFLOW_ADMIN_USER}'
+      --password '${AIRFLOW_ADMIN_PASSWORD}' --firstname Admin --lastname User
+      --role Admin --email '${AIRFLOW_ADMIN_EMAIL}' || true
+
+  airflow-webserver:
+    <<: *airflow-common
+    depends_on:
+      airflow-init: {condition: service_completed_successfully}
+      spark-master: {condition: service_healthy}
+    command: airflow webserver
+    ports: ["8088:8088"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail http://localhost:8088/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 12
+
+  airflow-scheduler:
+    <<: *airflow-common
+    depends_on:
+      airflow-init: {condition: service_completed_successfully}
+      spark-master: {condition: service_healthy}
+    command: airflow scheduler
+
+  superset:
+    build:
+      context: ./superset
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      spark-thrift-server: {condition: service_started}
+    environment:
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY}
+      SUPERSET_ADMIN_USER: ${SUPERSET_ADMIN_USER}
+      SUPERSET_ADMIN_PASSWORD: ${SUPERSET_ADMIN_PASSWORD}
+      SUPERSET_ADMIN_EMAIL: ${SUPERSET_ADMIN_EMAIL}
+    command: >-
+      /bin/sh -c "superset db upgrade &&
+      superset fab create-admin --username '$${SUPERSET_ADMIN_USER}'
+      --password '$${SUPERSET_ADMIN_PASSWORD}' --firstname Admin --lastname User
+      --email '$${SUPERSET_ADMIN_EMAIL}' || true;
+      superset init;
+      gunicorn --bind 0.0.0.0:8088 --workers 2 --timeout 120 'superset.app:create_app()'"
+    ports: ["8089:8088"]
+    volumes: [superset_home:/app/superset_home]
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail http://localhost:8088/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 12
+    networks: [lakehouse]
+
+networks:
+  lakehouse:
+    name: realestate-lakehouse
+
+volumes:
+  metastore_db:
+  minio_data:
+  airflow_db:
+  superset_home:
